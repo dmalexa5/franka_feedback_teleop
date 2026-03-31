@@ -1,0 +1,24 @@
+{
+  "name": "Franka Lerobot Collection Container",
+  "privileged": true,
+  "remoteUser": "user",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "franka_lerobot_teleop",
+  "workspaceFolder": "/ros2_ws",
+
+  "initializeCommand": "serial_gid=\"\"; if [ -e /dev/ttyACM0 ]; then serial_gid=$(stat -c '%g' /dev/ttyACM0); fi; printf 'USER_UID=%s\nUSER_GID=%s\nSERIAL_GID=%s\n' \"$(id -u \"$USER\")\" \"$(id -g \"$USER\")\" \"$serial_gid\" > .env",
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "terminal.integrated.profiles.linux": {
+          "bash": {
+            "path": "/bin/bash",
+            "args": ["-l"]
+          }
+        }
+      }
+    }
+  }
+}
