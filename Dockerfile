@@ -24,6 +24,7 @@ RUN apt-get update && \
         python3-venv \
         python3-colcon-argcomplete \
         python3-colcon-common-extensions \
+        python3-serial \
         sudo \
         vim \
         libglfw3-dev \
@@ -77,6 +78,7 @@ RUN sudo apt-get update \
         ros-humble-librealsense2* \
         ros2-testing-apt-source \
         ros-humble-depthai-ros-v3 \
+        ros-humble-foxglove-bridge
 
     && sudo apt-get clean \
     && sudo rm -rf /var/lib/apt/lists/*
