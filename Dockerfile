@@ -5,7 +5,9 @@ FROM ros:humble-ros-base
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    ROS_DISTRO=humble
+    ROS_DISTRO=humble \
+    RMW_IMPLEMENTATION=rmw_cyclonedds_cpp \
+    ROS_DOMAIN_ID=42
 
 ARG USER_UID=1001
 ARG USER_GID=1001
@@ -75,10 +77,8 @@ RUN sudo apt-get update \
         ros-humble-teleop-twist-keyboard \
         ros-humble-joy \
         ros-humble-teleop-twist-joy \
-        ros-humble-librealsense2* \
-        ros2-testing-apt-source \
-        ros-humble-depthai-ros-v3 \
-        ros-humble-foxglove-bridge
+        ros-humble-foxglove-bridge \
+        ros-humble-rmw-cyclonedds-cpp \
 
     && sudo apt-get clean \
     && sudo rm -rf /var/lib/apt/lists/*
@@ -96,7 +96,7 @@ RUN mkdir -p /ros2_ws/src \
     && sudo apt-get clean \
     && sudo rm -rf /var/lib/apt/lists/* \
     && rm -rf /home/$USERNAME/.ros
-    
+
 # Set the default shell to bash and the workdir to the source directory
 SHELL [ "/bin/bash", "-c" ]
 CMD [ "/bin/bash" ]
