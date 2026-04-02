@@ -1,6 +1,6 @@
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
-from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.launch_description_sources import PythonLaunchDescriptionSource, XmlLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -87,6 +87,13 @@ def generate_launch_description():
                 'robot_type': gripper_robot_type,
                 'namespace': gripper_namespace,
             }.items(),
+        ),
+        IncludeLaunchDescription(
+            XmlLaunchDescriptionSource(PathJoinSubstitution([
+                FindPackageShare('foxglove_bridge'),
+                'launch',
+                'foxglove_bridge_launch.xml',
+            ]))
         ),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([
