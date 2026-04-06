@@ -1,12 +1,14 @@
+"""Launch the Franka leader-follower teleop stack without recording."""
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
-from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 
-def generate_launch_description():
+def generate_launch_description() -> LaunchDescription:
+    """Create the teleop-only launch description."""
     robot_config_file = LaunchConfiguration('robot_config_file')
     gripper_robot_ip = LaunchConfiguration('gripper_robot_ip')
     gripper_use_fake_hardware = LaunchConfiguration('gripper_use_fake_hardware')
@@ -14,7 +16,6 @@ def generate_launch_description():
     gripper_namespace = LaunchConfiguration('gripper_namespace')
     gripper_teleop_parameters_file = LaunchConfiguration('gripper_teleop_parameters_file')
     gripper_teleop_namespace = LaunchConfiguration('gripper_teleop_namespace')
-    lerobot_export_namespace = LaunchConfiguration('lerobot_export_namespace')
 
     return LaunchDescription([
         DeclareLaunchArgument(
@@ -60,11 +61,6 @@ def generate_launch_description():
             default_value='',
             description='Namespace for the custom gripper teleop node.',
         ),
-        DeclareLaunchArgument(
-            'lerobot_export_namespace',
-            default_value='',
-            description='Namespace for the LeRobot export node.',
-        ),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([
                 FindPackageShare('franka_ros2_teleop'),
@@ -98,12 +94,5 @@ def generate_launch_description():
                 'parameters_file': gripper_teleop_parameters_file,
                 'namespace': gripper_teleop_namespace,
             }.items(),
-        ),
-        Node(
-            package='franka_lerobot_teleop',
-            executable='lerobot_export',
-            name='lerobot_export',
-            namespace=lerobot_export_namespace,
-            output='screen',
         ),
     ])

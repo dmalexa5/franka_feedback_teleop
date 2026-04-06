@@ -1,0 +1,115 @@
+output_dir: "~/franka_lerobot_data"
+sample_rate_hz: 30
+camera_stale_threshold_sec: 0.5
+command_topic: "/franka_lerobot_teleop/command"
+teleop_mode: "leader_follower"
+robot_name: "franka"
+pose_frame_description: "End-effector poses come from PoseStamped messages published by franka_robot_state_broadcaster."
+wrench_frame_description: "base frame"
+latest_sample_note: "At each 30 Hz tick, the recorder writes the most recent cached sample from every enabled topic. This intentionally allows temporal skew across mixed-rate topics."
+topics:
+  follower_pose:
+    topic: "/franka_teleop/follower/franka_robot_state_broadcaster/current_pose"
+    type: "geometry_msgs/msg/PoseStamped"
+    adapter: "pose_stamped"
+    enabled: true
+    required: true
+    role: "observation"
+    description: "Follower end-effector pose"
+  follower_joint_state:
+    topic: "/franka_teleop/follower/franka_robot_state_broadcaster/measured_joint_states"
+    type: "sensor_msgs/msg/JointState"
+    adapter: "joint_state"
+    enabled: true
+    required: true
+    role: "observation"
+    description: "Follower measured joint states"
+  follower_wrench:
+    topic: "/franka_teleop/follower/franka_robot_state_broadcaster/external_wrench_in_base_frame"
+    type: "geometry_msgs/msg/WrenchStamped"
+    adapter: "wrench_stamped"
+    enabled: true
+    required: true
+    role: "observation"
+    description: "Follower end-effector wrench in base frame"
+  follower_twist:
+    topic: "/franka_teleop/follower/franka_robot_state_broadcaster/desired_end_effector_twist"
+    type: "geometry_msgs/msg/TwistStamped"
+    adapter: "twist_stamped"
+    enabled: false
+    required: false
+    role: "observation"
+    description: "Optional follower end-effector twist"
+  leader_pose:
+    topic: "/franka_teleop/leader/franka_robot_state_broadcaster/current_pose"
+    type: "geometry_msgs/msg/PoseStamped"
+    adapter: "pose_stamped"
+    enabled: true
+    required: true
+    role: "action"
+    description: "Leader end-effector pose"
+  leader_joint_state:
+    topic: "/franka_teleop/leader/franka_robot_state_broadcaster/measured_joint_states"
+    type: "sensor_msgs/msg/JointState"
+    adapter: "joint_state"
+    enabled: true
+    required: true
+    role: "action"
+    description: "Leader measured joint states"
+  leader_twist:
+    topic: "/franka_teleop/leader/franka_robot_state_broadcaster/desired_end_effector_twist"
+    type: "geometry_msgs/msg/TwistStamped"
+    adapter: "twist_stamped"
+    enabled: false
+    required: false
+    role: "action"
+    description: "Optional leader end-effector twist"
+  gripper_joint_state:
+    topic: "/franka_gripper/joint_states"
+    type: "sensor_msgs/msg/JointState"
+    adapter: "joint_state"
+    enabled: true
+    required: true
+    role: "observation"
+    description: "Measured gripper joint states"
+  gripper_command_mirror:
+    topic: "/franka_lerobot_teleop/gripper_command"
+    type: "std_msgs/msg/String"
+    adapter: "json_string"
+    enabled: false
+    required: false
+    role: "action"
+    qos_profile: "default"
+    description: "Optional mirrored gripper command intent"
+  wrist_image:
+    topic: "/wrist/D455_1/color/image_raw"
+    type: "sensor_msgs/msg/Image"
+    adapter: "image"
+    enabled: true
+    required: true
+    role: "observation"
+    description: "Wrist RGB image"
+  wrist_camera_info:
+    topic: "/wrist/D455_1/color/camera_info"
+    type: "sensor_msgs/msg/CameraInfo"
+    adapter: "camera_info"
+    enabled: true
+    required: true
+    role: "observation"
+    description: "Wrist camera intrinsics"
+  base_image:
+    topic: "/base/D455_2/color/image_raw"
+    type: "sensor_msgs/msg/Image"
+    adapter: "image"
+    enabled: true
+    required: true
+    role: "observation"
+    description: "Base RGB image"
+  base_camera_info:
+    topic: "/base/D455_2/color/camera_info"
+    type: "sensor_msgs/msg/CameraInfo"
+    adapter: "camera_info"
+    enabled: true
+    required: true
+    role: "observation"
+    description: "Base camera intrinsics"
