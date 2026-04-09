@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import math
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 import rclpy
@@ -26,18 +27,6 @@ def import_message_type(type_str: str) -> type:
     return getattr(module, message_name)
 
 
-def default_gripper_command() -> Dict[str, Any]:
-    """Return the default gripper command record."""
-    return {
-        'command_type': 'none',
-        'width_cmd': None,
-        'speed_cmd': None,
-        'force_cmd': None,
-        'epsilon_inner': None,
-        'epsilon_outer': None,
-    }
-
-
 def missing_required_topic_keys(config: RecorderConfig, caches: Mapping[str, TopicCache]) -> List[str]:
     """Return enabled required topics that have not produced a first sample."""
     missing: List[str] = []
@@ -53,7 +42,7 @@ def metadata_updates_from_caches(caches: Mapping[str, TopicCache]) -> Dict[str, 
     updates: Dict[str, Any] = {}
 
     follower_joint_state = caches['follower_joint_state'].latest_payload
-    leader_joint_state = caches['leader_joint_state'].latest_payload
+    gripper_joint_state = caches['gripper_joint_state'].latest_payload
     wrist_info = (
         caches['wrist_camera_info'].latest_payload
         if 'wrist_camera_info' in caches
@@ -63,8 +52,8 @@ def metadata_updates_from_caches(caches: Mapping[str, TopicCache]) -> Dict[str, 
 
     if follower_joint_state is not None:
         updates['follower_joint_ordering'] = follower_joint_state['joint_names']
-    if leader_joint_state is not None:
-        updates['leader_joint_ordering'] = leader_joint_state['joint_names']
+    if gripper_joint_state is not None:
+        updates['gripper_joint_ordering'] = gripper_joint_state['joint_names']
 
     camera_updates: Dict[str, Any] = {}
     if wrist_info is not None:
@@ -77,8 +66,41 @@ def metadata_updates_from_caches(caches: Mapping[str, TopicCache]) -> Dict[str, 
     return updates
 
 
+def quaternion_to_rpy(orientation_xyzw: List[float]) -> List[float]:
+    """Convert a quaternion in XYZW order into roll, pitch, yaw."""
+    x, y, z, w = orientation_xyzw
+
+    sinr_cosp = 2.0 * (w * x + y * z)
+    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
+    roll = math.atan2(sinr_cosp, cosr_cosp)
+
+    sinp = 2.0 * (w * y - z * x)
+    if abs(sinp) >= 1.0:
+        pitch = math.copysign(math.pi / 2.0, sinp)
+    else:
+        pitch = math.asin(sinp)
+
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    yaw = math.atan2(siny_cosp, cosy_cosp)
+
+    return [roll, pitch, yaw]
+
+
+def gripper_width_from_joint_state(joint_state: Mapping[str, Any]) -> float:
+    """Extract the gripper opening width in meters from a JointState payload."""
+    positions = list(joint_state['joint_position'])
+    if len(positions) >= 2:
+        return float(positions[0] + positions[1])
+    if positions:
+        return float(2.0 * positions[0])
+    raise ValueError('Gripper JointState payload is missing position values.')
+
+
 def frame_from_caches(
-    timestamp_ns: int,
+    timestamp_sec: float,
+    frame_index: int,
+    episode_index: int,
     caches: Mapping[str, TopicCache],
 ) -> Tuple[Dict[str, Any], Dict[str, Optional[ImagePayload]]]:
     """Build one recorder frame from the current topic caches."""
@@ -86,57 +108,36 @@ def frame_from_caches(
     follower_pose = caches['follower_pose'].latest_payload
     follower_wrench = caches['follower_wrench'].latest_payload
     gripper_joint_state = caches['gripper_joint_state'].latest_payload
-    leader_joint_state = caches['leader_joint_state'].latest_payload
-    leader_pose = caches['leader_pose'].latest_payload
-    leader_twist = caches['leader_twist'].latest_payload if 'leader_twist' in caches else None
-    gripper_command = (
-        caches['gripper_command_mirror'].latest_payload
-        if 'gripper_command_mirror' in caches
-        else None
-    )
 
     images = {
         'wrist': caches['wrist_image'].latest_payload if 'wrist_image' in caches else None,
         'base': caches['base_image'].latest_payload if 'base_image' in caches else None,
     }
 
-    row = {
-        'timestamp': int(timestamp_ns),
-        'observation': {
-            'state': {
-                'follower_joint_position': follower_joint_state['joint_position'],
-                'follower_joint_names': follower_joint_state['joint_names'],
-                'follower_ee_position': follower_pose['position'],
-                'follower_ee_orientation_xyzw': follower_pose['orientation_xyzw'],
-                'follower_ee_wrench_base': follower_wrench['wrench_base'],
-                'gripper_joint_position': gripper_joint_state['joint_position'],
-            },
-            'images': {
-                'wrist': {'path': None},
-                'base': {'path': None},
-            },
-        },
-        'action': {
-            'leader_joint_position': leader_joint_state['joint_position'],
-            'leader_joint_names': leader_joint_state['joint_names'],
-            'leader_ee_position': leader_pose['position'],
-            'leader_ee_orientation_xyzw': leader_pose['orientation_xyzw'],
-            'leader_ee_twist': leader_twist['twist'] if leader_twist else None,
-            'gripper': default_gripper_command(),
-        },
-        'source_timestamps': {key: cache.source_timestamp_ns for key, cache in caches.items()},
-        'receipt_timestamps': {key: cache.receipt_timestamp_ns for key, cache in caches.items()},
-    }
+    gripper_width = gripper_width_from_joint_state(gripper_joint_state)
+    action = (
+        list(follower_pose['position'])
+        + quaternion_to_rpy(follower_pose['orientation_xyzw'])
+        + [gripper_width]
+    )
+    observation_state = (
+        list(follower_joint_state['joint_position'])
+        + list(follower_wrench['wrench'])
+    )
 
-    if gripper_command is not None:
-        row['action']['gripper'] = {
-            'command_type': gripper_command['command_type'],
-            'width_cmd': gripper_command['width_cmd'],
-            'speed_cmd': gripper_command['speed_cmd'],
-            'force_cmd': gripper_command['force_cmd'],
-            'epsilon_inner': gripper_command['epsilon_inner'],
-            'epsilon_outer': gripper_command['epsilon_outer'],
-        }
+    row = {
+        'action': action,
+        'observation': {
+            'state': observation_state,
+            'image': None,
+            'wrist_image': None,
+        },
+        'timestamp': float(timestamp_sec),
+        'frame_index': int(frame_index),
+        'episode_index': int(episode_index),
+        'index': int(frame_index),
+        'task_index': 0,
+    }
 
     return row, images
 
@@ -166,6 +167,7 @@ class RecorderNode(Node):
         }
         self._subscriptions = []
         self._recording = False
+        self._episode_first_frame_timestamp_ns: Optional[int] = None
 
         self._create_subscriptions()
         self._command_listener = CommandListener(self, self._config.command_topic, self._handle_command)
@@ -239,7 +241,7 @@ class RecorderNode(Node):
             'robot_name': self._config.robot_name,
             'latest_sample_note': self._config.latest_sample_note,
             'follower_joint_ordering': None,
-            'leader_joint_ordering': None,
+            'gripper_joint_ordering': None,
             'camera_topics': {
                 'wrist': (
                     self._config.topics['wrist_image'].topic
@@ -253,10 +255,14 @@ class RecorderNode(Node):
                 ),
             },
             'camera_intrinsics': {'wrist': None, 'base': None},
+            'action_semantics': 'cartesian_xyz_rpy_plus_width',
+            'state_semantics': 'desired_joint_positions_plus_wrench',
+            'pose_representation': 'xyz_rpy',
             'config_path': str(self._config.config_path),
         }
         episode_dir = self._writer.start_episode(metadata)
         self._recording = True
+        self._episode_first_frame_timestamp_ns = None
         self.get_logger().info(f'Started recording to {episode_dir}.')
 
     def _stop_recording(self) -> None:
@@ -292,7 +298,18 @@ class RecorderNode(Node):
                 )
 
         self._writer.update_metadata(metadata_updates_from_caches(self._caches))
-        frame, images = frame_from_caches(now_ns, self._caches)
+        if self._episode_first_frame_timestamp_ns is None:
+            self._episode_first_frame_timestamp_ns = now_ns
+        timestamp_sec = (now_ns - self._episode_first_frame_timestamp_ns) / 1_000_000_000.0
+        episode_index = self._writer.episode_id
+        if episode_index is None:
+            raise RuntimeError('Recorder attempted to write a frame without an active episode id.')
+        frame, images = frame_from_caches(
+            timestamp_sec,
+            self._writer.frame_index,
+            episode_index,
+            self._caches,
+        )
         self._writer.write_frame(frame, images)
 
     def destroy_node(self) -> bool:

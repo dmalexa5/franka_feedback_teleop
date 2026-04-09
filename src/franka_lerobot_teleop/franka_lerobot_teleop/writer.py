@@ -57,6 +57,14 @@ class EpisodeWriter:
         """Return the number of written frames."""
         return self._frame_index
 
+    @property
+    def episode_id(self) -> Optional[int]:
+        """Return the active episode id when available."""
+        episode_id = self._meta.get('episode_id')
+        if episode_id is None:
+            return None
+        return int(episode_id)
+
     def start_episode(self, metadata: Mapping[str, Any]) -> Path:
         """Create the next episode directory and write its initial metadata."""
         self._episodes_dir.mkdir(parents=True, exist_ok=True)
@@ -95,7 +103,10 @@ class EpisodeWriter:
             image_path = None
             if payload is not None:
                 image_path = self._write_image(camera_name, payload, self._frame_index)
-            frame_record['observation']['images'][camera_name]['path'] = image_path
+            if camera_name == 'base':
+                frame_record['observation']['image'] = image_path
+            elif camera_name == 'wrist':
+                frame_record['observation']['wrist_image'] = image_path
 
         self._frames_handle.write(json.dumps(frame_record, separators=(',', ':')) + '\n')
         self._frames_handle.flush()

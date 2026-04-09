@@ -1,13 +1,13 @@
 # `franka_lerobot_teleop`
 
-`franka_lerobot_teleop` is a minimal ROS 2 Humble data recorder for leader-follower Franka teleoperation plus a standalone exporter for LeRobot-friendly datasets.
+`franka_lerobot_teleop` is a minimal ROS 2 Humble data recorder for leader-follower Franka teleoperation plus a standalone exporter for ForceVLA-shaped datasets.
 
 ## Architecture
 
 The package is intentionally split into two stages:
 
 1. Stage 1: a ROS 2 recorder node caches the latest message for each configured topic and writes one synchronized timestep at a fixed 30 Hz.
-2. Stage 2: a standalone exporter converts the internal episode folders into a Parquet-based dataset layout with copied image assets.
+2. Stage 2: a standalone exporter converts the internal episode folders into a ForceVLA-shaped Parquet dataset layout with copied image assets.
 
 The recorder never writes while idle. Recording starts and stops only through `/franka_lerobot_teleop/command` with the string payloads `start` and `stop`.
 
@@ -96,32 +96,19 @@ episodes/episode_000001/
 
 Each `frames.jsonl` row stores:
 
-- recorder sample timestamp
-- follower observations
-- leader actions
-- optional leader twist
-- gripper command intent
-- image paths
-- source timestamps per topic
-- receipt timestamps per topic
+- `action`: `[x, y, z, roll, pitch, yaw, gripper_width]`
+- `observation.state`: `[q1..q7, fx, fy, fz, tx, ty, tz]`
+- `observation.image`: base image path
+- `observation.wrist_image`: wrist image path
+- `timestamp`: seconds from the first written frame in the episode
+- `frame_index`: zero-based frame index
+- `episode_index`: numeric id of the current episode
+- `index`: same as `frame_index`
+- `task_index`: currently always `0`
 
-## Gripper Command Mirror
+`action` is built from the follower end-effector pose on `/franka_teleop/follower/franka_robot_state_broadcaster/current_pose`, converted to `XYZ + RPY`, then concatenated with the gripper width derived from `/franka_gripper/joint_states`.
 
-The MVP does not sniff ROS action goal traffic directly. Instead, it supports an optional lightweight mirror topic:
-
-- topic: `/franka_lerobot_teleop/gripper_command`
-- type: `std_msgs/msg/String`
-- payload: JSON object with
-  - `command_type`
-  - `width_cmd`
-  - `speed_cmd`
-  - `force_cmd`
-  - `epsilon_inner`
-  - `epsilon_outer`
-  - `source_action`
-  - `sent_at_ns`
-
-When the mirror topic is disabled or absent, the recorder still writes gripper observation from `/franka_gripper/joint_states` and fills the command intent with `command_type="none"` plus null numeric command fields.
+`observation.state` is built from `/franka_teleop/follower/franka_robot_state_broadcaster/desired_joint_states` concatenated with `/franka_teleop/follower/franka_robot_state_broadcaster/external_wrench_in_stiffness_frame`.
 
 ## Export Workflow
 
@@ -142,4 +129,14 @@ data/episode_000001.parquet
 images/episode_000001/...
 ```
 
-The exporter keeps observation and action columns separate with dot-named fields that match the internal schema.
+The exporter writes ForceVLA-style Parquet columns:
+
+- `action`
+- `observation.state`
+- `observation.image`
+- `observation.wrist_image`
+- `timestamp`
+- `frame_index`
+- `episode_index`
+- `index`
+- `task_index`

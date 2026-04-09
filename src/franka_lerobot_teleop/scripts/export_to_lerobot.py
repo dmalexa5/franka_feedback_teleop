@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Standalone entry point for the LeRobot-friendly exporter."""
+"""Standalone entry point for the ForceVLA-shaped exporter."""
 
 from __future__ import annotations
 

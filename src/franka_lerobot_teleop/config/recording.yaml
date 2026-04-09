@@ -5,7 +5,7 @@ command_topic: "/franka_lerobot_teleop/command"
 teleop_mode: "leader_follower"
 robot_name: "franka"
 pose_frame_description: "End-effector poses come from PoseStamped messages published by franka_robot_state_broadcaster."
-wrench_frame_description: "base frame"
+wrench_frame_description: "stiffness frame"
 latest_sample_note: "At each 30 Hz tick, the recorder writes the most recent cached sample from every enabled topic. This intentionally allows temporal skew across mixed-rate topics."
 topics:
   follower_pose:
@@ -17,21 +17,21 @@ topics:
     role: "observation"
     description: "Follower end-effector pose"
   follower_joint_state:
-    topic: "/franka_teleop/follower/franka_robot_state_broadcaster/measured_joint_states"
+    topic: "/franka_teleop/follower/franka_robot_state_broadcaster/desired_joint_states"
     type: "sensor_msgs/msg/JointState"
     adapter: "joint_state"
     enabled: true
     required: true
     role: "observation"
-    description: "Follower measured joint states"
+    description: "Follower desired joint states"
   follower_wrench:
-    topic: "/franka_teleop/follower/franka_robot_state_broadcaster/external_wrench_in_base_frame"
+    topic: "/franka_teleop/follower/franka_robot_state_broadcaster/external_wrench_in_stiffness_frame"
     type: "geometry_msgs/msg/WrenchStamped"
     adapter: "wrench_stamped"
     enabled: true
     required: true
     role: "observation"
-    description: "Follower end-effector wrench in base frame"
+    description: "Follower end-effector wrench in stiffness frame"
   follower_twist:
     topic: "/franka_teleop/follower/franka_robot_state_broadcaster/desired_end_effector_twist"
     type: "geometry_msgs/msg/TwistStamped"
@@ -44,18 +44,18 @@ topics:
     topic: "/franka_teleop/leader/franka_robot_state_broadcaster/current_pose"
     type: "geometry_msgs/msg/PoseStamped"
     adapter: "pose_stamped"
-    enabled: true
-    required: true
+    enabled: false
+    required: false
     role: "action"
-    description: "Leader end-effector pose"
+    description: "Optional leader end-effector pose"
   leader_joint_state:
     topic: "/franka_teleop/leader/franka_robot_state_broadcaster/measured_joint_states"
     type: "sensor_msgs/msg/JointState"
     adapter: "joint_state"
-    enabled: true
-    required: true
+    enabled: false
+    required: false
     role: "action"
-    description: "Leader measured joint states"
+    description: "Optional leader measured joint states"
   leader_twist:
     topic: "/franka_teleop/leader/franka_robot_state_broadcaster/desired_end_effector_twist"
     type: "geometry_msgs/msg/TwistStamped"
@@ -71,7 +71,7 @@ topics:
     enabled: true
     required: true
     role: "observation"
-    description: "Measured gripper joint states"
+    description: "Measured gripper joint states used to derive width"
   gripper_command_mirror:
     topic: "/franka_lerobot_teleop/gripper_command"
     type: "std_msgs/msg/String"

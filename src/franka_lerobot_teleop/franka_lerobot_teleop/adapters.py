@@ -71,7 +71,7 @@ def adapt_wrench_stamped(message: Any) -> Dict[str, Any]:
     """Normalize a WrenchStamped message."""
     return {
         'frame_id': str(message.header.frame_id),
-        'wrench_base': [
+        'wrench': [
             float(message.wrench.force.x),
             float(message.wrench.force.y),
             float(message.wrench.force.z),
