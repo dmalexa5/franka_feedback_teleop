@@ -82,7 +82,7 @@ topics:
     qos_profile: "default"
     description: "Optional mirrored gripper command intent"
   wrist_image:
-    topic: "/wrist/D455_1/color/image_raw"
+    topic: "/wrist/D455_wrist/color/image_raw"
     type: "sensor_msgs/msg/Image"
     adapter: "image"
     enabled: true
@@ -90,7 +90,7 @@ topics:
     role: "observation"
     description: "Wrist RGB image"
   wrist_camera_info:
-    topic: "/wrist/D455_1/color/camera_info"
+    topic: "/wrist/D455_wrist/color/camera_info"
     type: "sensor_msgs/msg/CameraInfo"
     adapter: "camera_info"
     enabled: true
@@ -98,7 +98,7 @@ topics:
     role: "observation"
     description: "Wrist camera intrinsics"
   base_image:
-    topic: "/base/D455_2/color/image_raw"
+    topic: "/base/D455_base/color/image_raw"
     type: "sensor_msgs/msg/Image"
     adapter: "image"
     enabled: true
@@ -106,7 +106,7 @@ topics:
     role: "observation"
     description: "Base RGB image"
   base_camera_info:
-    topic: "/base/D455_2/color/camera_info"
+    topic: "/base/D455_base/color/camera_info"
     type: "sensor_msgs/msg/CameraInfo"
     adapter: "camera_info"
     enabled: true

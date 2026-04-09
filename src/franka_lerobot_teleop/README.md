@@ -33,27 +33,29 @@ Launch arguments override the YAML values for:
 
 ## Launch Usage
 
+Launch a basic teleop (no recording) setup with:
+
+```bash
+ros2 launch franka_lerobot_teleop basic_teleop.launch.py
+```
+
 Run the recorder node with:
 
 ```bash
-ros2 launch franka_lerobot_teleop record.launch.py
+ros2 launch franka_lerobot_teleop recording_teleop.launch.py
 ```
 
 Override defaults when needed:
 
 ```bash
-ros2 launch franka_lerobot_teleop record.launch.py \
+ros2 launch franka_lerobot_teleop recording_teleop.launch.py \
   output_dir:=/tmp/franka_dataset \
   sample_rate_hz:=30 \
   enable_wrist_camera:=true \
   enable_base_camera:=true
 ```
 
-Compatibility aliases are also installed:
 
-- `recording_teleop.launch.py`
-- `lerobot_teleop.launch.py`
-- `basic_teleop.launch.py`
 
 ## Start And Stop Workflow
 
@@ -141,11 +143,3 @@ images/episode_000001/...
 ```
 
 The exporter keeps observation and action columns separate with dot-named fields that match the internal schema.
-
-## Assumptions
-
-- JPEG is used for RGB images to keep storage volume manageable.
-- Camera topics are only required when their camera enable flag is true.
-- Camera stale warnings are issued when a cached enabled camera sample is older than 0.5 seconds at a recorder tick.
-- Leader state is treated as action intent and follower state is treated as observation.
-- The fixed-rate latest-sample design intentionally allows temporal skew between robot and camera streams, and the recorder stores timestamps so that skew remains observable.
