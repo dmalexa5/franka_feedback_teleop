@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import importlib
-import math
+import time
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 import rclpy
@@ -13,7 +13,7 @@ from rclpy.qos import qos_profile_sensor_data
 
 from .adapters import ImagePayload, get_adapter, source_timestamp_ns
 from .command_listener import CommandListener
-from .config import RecorderConfig, TopicSpec, load_recorder_config, topic_names_by_key
+from .config import RecorderConfig, TopicSpec, load_recorder_config
 from .topic_cache import TopicCache
 from .writer import EpisodeWriter
 
@@ -37,54 +37,9 @@ def missing_required_topic_keys(config: RecorderConfig, caches: Mapping[str, Top
     return missing
 
 
-def metadata_updates_from_caches(caches: Mapping[str, TopicCache]) -> Dict[str, Any]:
-    """Extract episode metadata that becomes available only after messages arrive."""
-    updates: Dict[str, Any] = {}
-
-    follower_joint_state = caches['follower_joint_state'].latest_payload
-    gripper_joint_state = caches['gripper_joint_state'].latest_payload
-    wrist_info = (
-        caches['wrist_camera_info'].latest_payload
-        if 'wrist_camera_info' in caches
-        else None
-    )
-    base_info = caches['base_camera_info'].latest_payload if 'base_camera_info' in caches else None
-
-    if follower_joint_state is not None:
-        updates['follower_joint_ordering'] = follower_joint_state['joint_names']
-    if gripper_joint_state is not None:
-        updates['gripper_joint_ordering'] = gripper_joint_state['joint_names']
-
-    camera_updates: Dict[str, Any] = {}
-    if wrist_info is not None:
-        camera_updates['wrist'] = wrist_info
-    if base_info is not None:
-        camera_updates['base'] = base_info
-    if camera_updates:
-        updates['camera_intrinsics'] = camera_updates
-
-    return updates
-
-
-def quaternion_to_rpy(orientation_xyzw: List[float]) -> List[float]:
-    """Convert a quaternion in XYZW order into roll, pitch, yaw."""
-    x, y, z, w = orientation_xyzw
-
-    sinr_cosp = 2.0 * (w * x + y * z)
-    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
-    roll = math.atan2(sinr_cosp, cosr_cosp)
-
-    sinp = 2.0 * (w * y - z * x)
-    if abs(sinp) >= 1.0:
-        pitch = math.copysign(math.pi / 2.0, sinp)
-    else:
-        pitch = math.asin(sinp)
-
-    siny_cosp = 2.0 * (w * z + x * y)
-    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
-    yaw = math.atan2(siny_cosp, cosy_cosp)
-
-    return [roll, pitch, yaw]
+def pose_vector_from_payload(pose: Mapping[str, Any]) -> List[float]:
+    """Convert a normalized pose payload into [x, y, z, qx, qy, qz, qw]."""
+    return list(pose['position']) + list(pose['orientation_xyzw'])
 
 
 def gripper_width_from_joint_state(joint_state: Mapping[str, Any]) -> float:
@@ -108,6 +63,8 @@ def frame_from_caches(
     follower_pose = caches['follower_pose'].latest_payload
     follower_wrench = caches['follower_wrench'].latest_payload
     gripper_joint_state = caches['gripper_joint_state'].latest_payload
+    leader_joint_state = caches['leader_joint_state'].latest_payload if 'leader_joint_state' in caches else None
+    leader_pose = caches['leader_pose'].latest_payload if 'leader_pose' in caches else None
 
     images = {
         'wrist': caches['wrist_image'].latest_payload if 'wrist_image' in caches else None,
@@ -115,29 +72,34 @@ def frame_from_caches(
     }
 
     gripper_width = gripper_width_from_joint_state(gripper_joint_state)
-    action = (
-        list(follower_pose['position'])
-        + quaternion_to_rpy(follower_pose['orientation_xyzw'])
-        + [gripper_width]
-    )
-    observation_state = (
-        list(follower_joint_state['joint_position'])
-        + list(follower_wrench['wrench'])
-    )
-
     row = {
-        'action': action,
+        'action': {
+            'ee_pose': pose_vector_from_payload(follower_pose),
+            'gripper': gripper_width,
+        },
         'observation': {
-            'state': observation_state,
-            'image': None,
-            'wrist_image': None,
+            'images': {
+                'base': None,
+                'wrist': None,
+            },
+            'state': {
+                'q': list(follower_joint_state['joint_position']),
+                'ee_pose': pose_vector_from_payload(follower_pose),
+                'wrench': list(follower_wrench['wrench']),
+            },
         },
         'timestamp': float(timestamp_sec),
         'frame_index': int(frame_index),
         'episode_index': int(episode_index),
-        'index': int(frame_index),
-        'task_index': 0,
     }
+
+    leader: Dict[str, Any] = {}
+    if leader_joint_state is not None:
+        leader['q'] = list(leader_joint_state['joint_position'])
+    if leader_pose is not None:
+        leader['ee_pose'] = pose_vector_from_payload(leader_pose)
+    if leader:
+        row['leader'] = leader
 
     return row, images
 
@@ -168,6 +130,8 @@ class RecorderNode(Node):
         self._subscriptions = []
         self._recording = False
         self._episode_first_frame_timestamp_ns: Optional[int] = None
+        self._episode_start_timestamp_ns: Optional[int] = None
+        self._pending_success_annotation: Optional[bool] = None
 
         self._create_subscriptions()
         self._command_listener = CommandListener(self, self._config.command_topic, self._handle_command)
@@ -214,55 +178,35 @@ class RecorderNode(Node):
 
         return callback
 
-    def _handle_command(self, command: str) -> None:
-        """Start or stop recording."""
+    def _handle_command(self, payload: Mapping[str, Any]) -> None:
+        """Handle a recorder lifecycle or annotation command."""
+        command = str(payload.get('command', ''))
         if command == 'start':
-            self._start_recording()
+            self._start_recording(str(payload.get('task', '')))
         elif command == 'stop':
             self._stop_recording()
+        elif command == 'annotate_last_episode':
+            success = payload.get('success')
+            if isinstance(success, bool):
+                self._annotate_last_episode(success)
 
-    def _start_recording(self) -> None:
+    def _start_recording(self, task: str) -> None:
         """Start a new episode if the recorder is idle."""
         if self._recording:
             self.get_logger().warn('Recorder is already active. Ignoring duplicate start command.')
             return
 
+        start_timestamp_ns = self.get_clock().now().nanoseconds
         metadata = {
-            'start_timestamp': self.get_clock().now().nanoseconds,
-            'end_timestamp': None,
-            'sample_rate_hz': self._config.sample_rate_hz,
-            'enabled_topics': topic_names_by_key(self._config),
-            'required_topics': {
-                spec.key: spec.topic for spec in self._config.required_topics()
-            },
-            'pose_frame_description': self._config.pose_frame_description,
-            'wrench_frame_description': self._config.wrench_frame_description,
-            'teleop_mode': self._config.teleop_mode,
-            'robot_name': self._config.robot_name,
-            'latest_sample_note': self._config.latest_sample_note,
-            'follower_joint_ordering': None,
-            'gripper_joint_ordering': None,
-            'camera_topics': {
-                'wrist': (
-                    self._config.topics['wrist_image'].topic
-                    if 'wrist_image' in self._caches
-                    else None
-                ),
-                'base': (
-                    self._config.topics['base_image'].topic
-                    if 'base_image' in self._caches
-                    else None
-                ),
-            },
-            'camera_intrinsics': {'wrist': None, 'base': None},
-            'action_semantics': 'cartesian_xyz_rpy_plus_width',
-            'state_semantics': 'desired_joint_positions_plus_wrench',
-            'pose_representation': 'xyz_rpy',
-            'config_path': str(self._config.config_path),
+            'task': task,
+            'success': None,
+            'duration': 0.0,
+            'frequency': int(self._config.sample_rate_hz),
         }
         episode_dir = self._writer.start_episode(metadata)
         self._recording = True
         self._episode_first_frame_timestamp_ns = None
+        self._episode_start_timestamp_ns = start_timestamp_ns
         self.get_logger().info(f'Started recording to {episode_dir}.')
 
     def _stop_recording(self) -> None:
@@ -270,9 +214,45 @@ class RecorderNode(Node):
         if not self._recording:
             self.get_logger().warn('Recorder is idle. Ignoring stop command.')
             return
-        self._writer.finalize(self.get_clock().now().nanoseconds)
+
+        end_timestamp_ns = self.get_clock().now().nanoseconds
+        if self._episode_start_timestamp_ns is None:
+            duration_sec = 0.0
+        else:
+            duration_sec = (end_timestamp_ns - self._episode_start_timestamp_ns) / 1_000_000_000.0
+        self._writer.update_metadata({'duration': float(duration_sec)})
+        self._writer.finalize()
+        if self._pending_success_annotation is not None:
+            success = self._pending_success_annotation
+            self._pending_success_annotation = None
+            if not self._writer.update_last_episode_metadata({'success': success}):
+                self.get_logger().warn('Failed to apply deferred success annotation.')
+            else:
+                self.get_logger().info(f'Annotated last episode with success={success}.')
         self._recording = False
+        self._episode_start_timestamp_ns = None
         self.get_logger().info('Stopped recording and finalized the current episode.')
+
+    def _annotate_last_episode(self, success: bool) -> None:
+        """Persist the success label for the most recently recorded episode."""
+        if self._recording:
+            self._pending_success_annotation = success
+            self.get_logger().info(
+                f'Deferred success annotation until episode finalization: success={success}.'
+            )
+            return
+
+        deadline = time.monotonic() + 1.0
+        while time.monotonic() < deadline:
+            if self._writer.update_last_episode_metadata({'success': success}):
+                self.get_logger().info(f'Annotated last episode with success={success}.')
+                return
+            time.sleep(0.05)
+
+        if not self._writer.update_last_episode_metadata({'success': success}):
+            self.get_logger().warn('No finalized episode is available to annotate.')
+            return
+        self.get_logger().info(f'Annotated last episode with success={success}.')
 
     def _on_timer(self) -> None:
         """Write one latest-sample frame at the configured fixed rate."""
@@ -297,7 +277,6 @@ class RecorderNode(Node):
                     throttle_duration_sec=5.0,
                 )
 
-        self._writer.update_metadata(metadata_updates_from_caches(self._caches))
         if self._episode_first_frame_timestamp_ns is None:
             self._episode_first_frame_timestamp_ns = now_ns
         timestamp_sec = (now_ns - self._episode_first_frame_timestamp_ns) / 1_000_000_000.0
@@ -315,7 +294,13 @@ class RecorderNode(Node):
     def destroy_node(self) -> bool:
         """Finalize any active episode before node destruction."""
         if self._recording:
-            self._writer.finalize(self.get_clock().now().nanoseconds)
+            end_timestamp_ns = self.get_clock().now().nanoseconds
+            if self._episode_start_timestamp_ns is None:
+                duration_sec = 0.0
+            else:
+                duration_sec = (end_timestamp_ns - self._episode_start_timestamp_ns) / 1_000_000_000.0
+            self._writer.update_metadata({'duration': float(duration_sec)})
+            self._writer.finalize()
             self._recording = False
         return super().destroy_node()
 

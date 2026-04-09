@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Standalone entry point for the ForceVLA-shaped exporter."""
+"""Standalone entry point for the nested Parquet exporter."""
 
 from __future__ import annotations
 

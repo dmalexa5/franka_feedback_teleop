@@ -1,4 +1,4 @@
-"""Standalone exporter from internal episodes into a ForceVLA-shaped layout."""
+"""Standalone exporter from internal episodes into a nested Parquet layout."""
 
 from __future__ import annotations
 
@@ -22,8 +22,6 @@ REQUIRED_FRAME_FIELDS = (
     'observation',
     'frame_index',
     'episode_index',
-    'index',
-    'task_index',
 )
 
 
@@ -44,38 +42,64 @@ def validate_episode(
     frames: Sequence[Mapping[str, Any]],
 ) -> None:
     """Validate an internal episode before export."""
-    if 'episode_name' not in meta:
-        raise ValueError(f'{episode_dir} is missing episode_name in meta.json.')
     for field in REQUIRED_FRAME_FIELDS:
         if not frames:
             break
         if field not in frames[0]:
             raise ValueError(f'{episode_dir} is missing required frame field {field!r}.')
 
+    if frames:
+        _require_nested_field(episode_dir, frames[0], ('action', 'ee_pose'))
+        _require_nested_field(episode_dir, frames[0], ('action', 'gripper'))
+        _require_nested_field(episode_dir, frames[0], ('observation', 'images', 'base'))
+        _require_nested_field(episode_dir, frames[0], ('observation', 'images', 'wrist'))
+        _require_nested_field(episode_dir, frames[0], ('observation', 'state', 'q'))
+        _require_nested_field(episode_dir, frames[0], ('observation', 'state', 'ee_pose'))
+        _require_nested_field(episode_dir, frames[0], ('observation', 'state', 'wrench'))
+
     for frame in frames:
-        for image_key in ('image', 'wrist_image'):
-            path = frame.get('observation', {}).get(image_key)
+        images = frame.get('observation', {}).get('images', {})
+        for image_key in ('base', 'wrist'):
+            path = images.get(image_key)
             if path and not (episode_dir / path).exists():
                 raise ValueError(f'Missing referenced image file: {episode_dir / path}')
 
 
+def _require_nested_field(
+    episode_dir: Path,
+    frame: Mapping[str, Any],
+    path: Tuple[str, ...],
+) -> None:
+    """Require that a nested field path exists in a frame."""
+    current: Any = frame
+    for key in path:
+        if not isinstance(current, Mapping) or key not in current:
+            raise ValueError(
+                f"{episode_dir} is missing required frame field {'.'.join(path)!r}."
+            )
+        current = current[key]
+
+
 def export_schema() -> 'pa.Schema':
-    """Return the Parquet schema for ForceVLA-shaped export rows."""
+    """Return the Parquet schema for nested export rows."""
     assert pa is not None
     image_struct = pa.struct([
         pa.field('bytes', pa.binary()),
         pa.field('path', pa.string()),
     ])
     return pa.schema([
-        pa.field('action', pa.list_(pa.float64())),
-        pa.field('observation.state', pa.list_(pa.float64())),
-        pa.field('observation.image', image_struct),
-        pa.field('observation.wrist_image', image_struct),
+        pa.field('action.ee_pose', pa.list_(pa.float64())),
+        pa.field('action.gripper', pa.float64()),
+        pa.field('observation.images.base', image_struct),
+        pa.field('observation.images.wrist', image_struct),
+        pa.field('observation.state.q', pa.list_(pa.float64())),
+        pa.field('observation.state.ee_pose', pa.list_(pa.float64())),
+        pa.field('observation.state.wrench', pa.list_(pa.float64())),
+        pa.field('leader.q', pa.list_(pa.float64())),
+        pa.field('leader.ee_pose', pa.list_(pa.float64())),
         pa.field('timestamp', pa.float64()),
         pa.field('frame_index', pa.int64()),
         pa.field('episode_index', pa.int64()),
-        pa.field('index', pa.int64()),
-        pa.field('task_index', pa.int64()),
     ])
 
 
@@ -130,7 +154,7 @@ def export_dataset(input_root: Path, output_dir: Path) -> List[Dict[str, Any]]:
         exported.append(export_episode(episode_dir, output_dir))
 
     info = {
-        'format': 'forcevla_compatible',
+        'format': 'franka_lerobot_nested',
         'source_root': str(input_root),
         'episode_count': len(exported),
         'episodes': [item['episode_name'] for item in exported],
@@ -151,24 +175,34 @@ def export_episode(episode_dir: Path, output_dir: Path) -> Dict[str, Any]:
     meta, frames = load_episode(episode_dir)
     validate_episode(episode_dir, meta, frames)
 
-    episode_name = meta['episode_name']
-    episode_index = int(meta.get('episode_id', 0))
+    episode_name = episode_dir.name
+    try:
+        episode_index = int(episode_name.split('_')[-1])
+    except ValueError:
+        episode_index = 0
     exported_images_dir = output_dir / 'images' / episode_name
     _copy_images(episode_dir / 'images', exported_images_dir)
 
     rows: List[Dict[str, Any]] = []
     for frame in frames:
         observation = frame.get('observation', {})
+        images = observation.get('images', {})
+        state = observation.get('state', {})
+        action = frame.get('action', {})
+        leader = frame.get('leader', {})
         rows.append({
-            'action': list(frame.get('action', [])),
-            'observation.state': list(observation.get('state', [])),
-            'observation.image': image_cell(episode_name, observation.get('image')),
-            'observation.wrist_image': image_cell(episode_name, observation.get('wrist_image')),
+            'action.ee_pose': list(action.get('ee_pose', [])),
+            'action.gripper': float(action.get('gripper', 0.0)),
+            'observation.images.base': image_cell(episode_name, images.get('base')),
+            'observation.images.wrist': image_cell(episode_name, images.get('wrist')),
+            'observation.state.q': list(state.get('q', [])),
+            'observation.state.ee_pose': list(state.get('ee_pose', [])),
+            'observation.state.wrench': list(state.get('wrench', [])),
+            'leader.q': list(leader['q']) if 'q' in leader else None,
+            'leader.ee_pose': list(leader['ee_pose']) if 'ee_pose' in leader else None,
             'timestamp': float(frame.get('timestamp', 0.0)),
             'frame_index': int(frame.get('frame_index', 0)),
             'episode_index': episode_index,
-            'index': int(frame.get('index', 0)),
-            'task_index': 0,
         })
 
     table = pa.Table.from_pylist(rows, schema=export_schema())
@@ -176,11 +210,13 @@ def export_episode(episode_dir: Path, output_dir: Path) -> Dict[str, Any]:
     pq.write_table(table, parquet_path)
 
     return {
-        'episode_id': meta.get('episode_id'),
+        'episode_id': episode_index,
         'episode_name': episode_name,
         'frame_count': len(rows),
-        'start_timestamp': meta.get('start_timestamp'),
-        'end_timestamp': meta.get('end_timestamp'),
+        'task': meta.get('task'),
+        'success': meta.get('success'),
+        'duration': meta.get('duration'),
+        'frequency': meta.get('frequency'),
         'parquet_path': (Path('data') / parquet_path.name).as_posix(),
     }
 
@@ -201,7 +237,7 @@ def _copy_images(source_dir: Path, target_dir: Path) -> None:
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     """Parse exporter CLI arguments."""
     parser = argparse.ArgumentParser(
-        description='Export internal episodes into a ForceVLA-shaped layout.'
+        description='Export internal episodes into a nested Parquet layout.'
     )
     parser.add_argument(
         '--input-root',

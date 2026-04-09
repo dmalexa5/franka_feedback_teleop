@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional, TextIO
 
 from .adapters import ImagePayload
 
@@ -38,9 +38,12 @@ class EpisodeWriter:
         self._output_dir = Path(output_dir)
         self._episodes_dir = self._output_dir / 'episodes'
         self._episode_dir: Optional[Path] = None
-        self._frames_handle = None
+        self._last_finalized_episode_dir: Optional[Path] = None
+        self._frames_handle: Optional[TextIO] = None
         self._frame_index = 0
         self._meta: Dict[str, Any] = {}
+        self._episode_id: Optional[int] = None
+        self._episode_name: Optional[str] = None
 
     @property
     def is_active(self) -> bool:
@@ -60,10 +63,7 @@ class EpisodeWriter:
     @property
     def episode_id(self) -> Optional[int]:
         """Return the active episode id when available."""
-        episode_id = self._meta.get('episode_id')
-        if episode_id is None:
-            return None
-        return int(episode_id)
+        return self._episode_id
 
     def start_episode(self, metadata: Mapping[str, Any]) -> Path:
         """Create the next episode directory and write its initial metadata."""
@@ -74,9 +74,8 @@ class EpisodeWriter:
         (self._episode_dir / 'images' / 'base').mkdir(parents=True, exist_ok=True)
         self._frame_index = 0
         self._meta = dict(metadata)
-        self._meta['episode_id'] = episode_id
-        self._meta['episode_name'] = self._episode_dir.name
-        self._meta['frame_count'] = 0
+        self._episode_id = episode_id
+        self._episode_name = self._episode_dir.name
         self._write_meta()
         self._frames_handle = (self._episode_dir / 'frames.jsonl').open('w', encoding='utf-8')
         return self._episode_dir
@@ -103,25 +102,43 @@ class EpisodeWriter:
             image_path = None
             if payload is not None:
                 image_path = self._write_image(camera_name, payload, self._frame_index)
-            if camera_name == 'base':
-                frame_record['observation']['image'] = image_path
-            elif camera_name == 'wrist':
-                frame_record['observation']['wrist_image'] = image_path
+            frame_record['observation']['images'][camera_name] = image_path
 
         self._frames_handle.write(json.dumps(frame_record, separators=(',', ':')) + '\n')
         self._frames_handle.flush()
         self._frame_index += 1
-        self._meta['frame_count'] = self._frame_index
 
-    def finalize(self, end_timestamp_ns: int) -> None:
-        """Finalize the active episode and persist final metadata."""
+    def finalize(self) -> None:
+        """Finalize the active episode."""
         if not self.is_active or self._frames_handle is None:
             return
-        self._meta['end_timestamp'] = int(end_timestamp_ns)
-        self._meta['frame_count'] = self._frame_index
         self._write_meta()
         self._frames_handle.close()
         self._frames_handle = None
+        self._last_finalized_episode_dir = self._episode_dir
+        self._episode_dir = None
+
+    def update_last_episode_metadata(self, updates: Mapping[str, Any]) -> bool:
+        """Rewrite the most recently opened episode metadata."""
+        if self._last_finalized_episode_dir is None:
+            return False
+
+        meta_path = self._last_finalized_episode_dir / 'meta.json'
+        if not meta_path.exists():
+            return False
+
+        with meta_path.open('r', encoding='utf-8') as handle:
+            current_meta = json.load(handle)
+
+        _deep_update(current_meta, dict(updates))
+
+        with meta_path.open('w', encoding='utf-8') as handle:
+            json.dump(_json_ready(current_meta), handle, indent=2, sort_keys=True)
+            handle.write('\n')
+
+        if self.is_active:
+            self._meta = current_meta
+        return True
 
     def _write_image(self, camera_name: str, payload: ImagePayload, index: int) -> str:
         """Write one camera frame and return its path relative to the episode root."""

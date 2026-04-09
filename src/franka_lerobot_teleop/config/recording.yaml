@@ -44,7 +44,7 @@ topics:
     topic: "/franka_teleop/leader/franka_robot_state_broadcaster/current_pose"
     type: "geometry_msgs/msg/PoseStamped"
     adapter: "pose_stamped"
-    enabled: false
+    enabled: true
     required: false
     role: "action"
     description: "Optional leader end-effector pose"
@@ -52,7 +52,7 @@ topics:
     topic: "/franka_teleop/leader/franka_robot_state_broadcaster/measured_joint_states"
     type: "sensor_msgs/msg/JointState"
     adapter: "joint_state"
-    enabled: false
+    enabled: true
     required: false
     role: "action"
     description: "Optional leader measured joint states"
