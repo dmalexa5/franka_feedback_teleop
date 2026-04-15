@@ -1,10 +1,10 @@
-"""Utilities for recording Franka teleoperation data and exporting it later."""
+"""Utilities for recording Franka teleoperation data as Parquet episodes."""
 
 __all__ = [
     'adapters',
     'command_listener',
     'config',
-    'exporter',
+    'filter',
     'recorder_node',
     'topic_cache',
     'writer',

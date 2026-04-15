@@ -1,13 +1,10 @@
 # `franka_lerobot_teleop`
 
-`franka_lerobot_teleop` is a minimal ROS 2 Humble data recorder for leader-follower Franka teleoperation plus a standalone exporter for nested Parquet datasets.
+`franka_lerobot_teleop` is a minimal ROS 2 Humble data recorder for leader-follower Franka teleoperation episodes stored directly as per-episode Parquet files.
 
 ## Architecture
 
-The package is intentionally split into two stages:
-
-1. Stage 1: a ROS 2 recorder node caches the latest message for each configured topic and writes one synchronized timestep at a fixed 30 Hz.
-2. Stage 2: a standalone exporter converts the internal episode folders into a nested Parquet dataset layout with copied image assets.
+The ROS 2 recorder node caches the latest message for each configured topic and writes one timestep at a fixed 30 Hz directly into the active episode's Parquet file.
 
 The recorder never writes while idle. Recording starts, stops, and post-stop success annotation happen through `/franka_lerobot_teleop/command` with JSON payloads in `std_msgs/String`. Legacy plain-text `start` and `stop` commands are still accepted for compatibility.
 
@@ -75,7 +72,7 @@ Each episode is written under:
 ```text
 episodes/episode_000001/
   meta.json
-  frames.jsonl
+  frames.parquet
   images/wrist/000000.jpg
   images/base/000000.jpg
 ```
@@ -87,55 +84,32 @@ episodes/episode_000001/
 - `duration`
 - `frequency`
 
-Each `frames.jsonl` row stores:
+Each `frames.parquet` row stores:
 
-- `action.ee_pose`: follower pose as `[x, y, z, qx, qy, qz, qw]`
+- `action.state`: follower joint positions as seven joint angles
+- `action.wrench`: filtered follower wrench as `[fx, fy, fz, tx, ty, tz]`
 - `action.gripper`: measured gripper width
-- `observation.images.base`: base image path
-- `observation.images.wrist`: wrist image path
-- `observation.state.q`: follower joint positions
-- `observation.state.ee_pose`: follower pose as `[x, y, z, qx, qy, qz, qw]`
-- `observation.state.wrench`: follower wrench as `[fx, fy, fz, tx, ty, tz]`
-- `leader.q`: optional leader joint positions
-- `leader.ee_pose`: optional leader pose as `[x, y, z, qx, qy, qz, qw]`
+- `phase`: currently always `free`
+- `observation.pose`: follower pose as `[x, y, z, qx, qy, qz, qw]`
+- `observation.wrench`: raw follower wrench as `[fx, fy, fz, tx, ty, tz]`
+- `observation.base_image`: image cell with `bytes` and `path`
+- `observation.wrist_image`: image cell with `bytes` and `path`
 - `timestamp`: seconds from the first written frame in the episode
 - `frame_index`: zero-based frame index
 - `episode_index`: numeric id of the current episode
+- `task_index`: currently always `0`
 
-`action.ee_pose` intentionally duplicates the follower end-effector pose on `/franka_teleop/follower/franka_robot_state_broadcaster/current_pose`. `action.gripper` is derived from `/franka_gripper/joint_states`.
+`action.state` comes from `/franka_teleop/follower/franka_robot_state_broadcaster/desired_joint_states`. `action.gripper` is derived from `/franka_gripper/joint_states`.
 
-`observation.state` is built from follower joint state, pose, and wrench topics. `leader` is present only when optional leader topics have produced samples.
+`action.wrench` and `observation.wrench` both come from `/franka_teleop/follower/franka_robot_state_broadcaster/external_wrench_in_stiffness_frame`. `action.wrench` applies an exponential moving average with alpha `0.1`; `observation.wrench` stores the raw topic value.
 
-## Export Workflow
+Image columns store LeRobot-style path cells such as `{"bytes": null, "path": "images/base/000000.jpg"}` while JPEG files stay in the episode image directories.
 
-The exporter is file-based and does not require ROS:
+## Verification
+
+Recommended checks after changes:
 
 ```bash
-python3 scripts/export_to_lerobot.py \
-  --input-root /tmp/franka_dataset \
-  --output-dir /tmp/franka_dataset_export
+python3 -m pytest src/franka_lerobot_teleop/test
+colcon build --packages-select franka_lerobot_teleop
 ```
-
-Exported output:
-
-```text
-meta/info.json
-meta/episodes.jsonl
-data/episode_000001.parquet
-images/episode_000001/...
-```
-
-The exporter writes nested Parquet columns:
-
-- `action.ee_pose`
-- `action.gripper`
-- `observation.images.base`
-- `observation.images.wrist`
-- `observation.state.q`
-- `observation.state.ee_pose`
-- `observation.state.wrench`
-- `leader.q`
-- `leader.ee_pose`
-- `timestamp`
-- `frame_index`
-- `episode_index`

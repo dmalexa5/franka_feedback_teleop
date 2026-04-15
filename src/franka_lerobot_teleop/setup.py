@@ -21,11 +21,11 @@ setup(
             [f for f in glob('config/*') if os.path.isfile(f)],
         ),
     ],
-    install_requires=['setuptools', 'numpy', 'Pillow', 'PyYAML'],
+    install_requires=['setuptools', 'numpy', 'Pillow', 'pyarrow', 'PyYAML'],
     zip_safe=True,
     maintainer='user',
     maintainer_email='dmalexa5@ncsu.edu',
-    description='Minimal recorder and exporter for Franka leader-follower teleoperation data.',
+    description='Minimal Parquet recorder for Franka leader-follower teleoperation data.',
     license='Apache-2.0',
     extras_require={
         'test': [
@@ -33,7 +33,6 @@ setup(
         ],
     },
     scripts=[
-        'scripts/export_to_lerobot.py',
         'scripts/recorder_ui.py',
     ],
     entry_points={

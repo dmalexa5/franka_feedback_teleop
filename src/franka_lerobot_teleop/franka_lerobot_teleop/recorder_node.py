@@ -14,6 +14,7 @@ from rclpy.qos import qos_profile_sensor_data
 from .adapters import ImagePayload, get_adapter, source_timestamp_ns
 from .command_listener import CommandListener
 from .config import RecorderConfig, TopicSpec, load_recorder_config
+from .filter import ExponentialMovingAverage, WRENCH_EMA_ALPHA
 from .topic_cache import TopicCache
 from .writer import EpisodeWriter
 
@@ -52,54 +53,50 @@ def gripper_width_from_joint_state(joint_state: Mapping[str, Any]) -> float:
     raise ValueError('Gripper JointState payload is missing position values.')
 
 
+def fixed_float_vector(payload: Mapping[str, Any], key: str, size: int) -> List[float]:
+    """Extract and validate a fixed-size float vector from a normalized payload."""
+    values = [float(value) for value in payload[key]]
+    if len(values) != size:
+        raise ValueError(f"Expected '{key}' to contain {size} values, got {len(values)}.")
+    return values
+
+
 def frame_from_caches(
     timestamp_sec: float,
     frame_index: int,
     episode_index: int,
     caches: Mapping[str, TopicCache],
+    wrench_filter: ExponentialMovingAverage,
 ) -> Tuple[Dict[str, Any], Dict[str, Optional[ImagePayload]]]:
     """Build one recorder frame from the current topic caches."""
     follower_joint_state = caches['follower_joint_state'].latest_payload
     follower_pose = caches['follower_pose'].latest_payload
     follower_wrench = caches['follower_wrench'].latest_payload
     gripper_joint_state = caches['gripper_joint_state'].latest_payload
-    leader_joint_state = caches['leader_joint_state'].latest_payload if 'leader_joint_state' in caches else None
-    leader_pose = caches['leader_pose'].latest_payload if 'leader_pose' in caches else None
 
     images = {
         'wrist': caches['wrist_image'].latest_payload if 'wrist_image' in caches else None,
         'base': caches['base_image'].latest_payload if 'base_image' in caches else None,
     }
 
+    follower_joint_positions = fixed_float_vector(follower_joint_state, 'joint_position', 7)
+    raw_wrench = fixed_float_vector(follower_wrench, 'wrench', 6)
+    filtered_wrench = wrench_filter.update(raw_wrench)
     gripper_width = gripper_width_from_joint_state(gripper_joint_state)
     row = {
-        'action': {
-            'ee_pose': pose_vector_from_payload(follower_pose),
-            'gripper': gripper_width,
-        },
-        'observation': {
-            'images': {
-                'base': None,
-                'wrist': None,
-            },
-            'state': {
-                'q': list(follower_joint_state['joint_position']),
-                'ee_pose': pose_vector_from_payload(follower_pose),
-                'wrench': list(follower_wrench['wrench']),
-            },
-        },
+        'action.state': follower_joint_positions,
+        'action.wrench': filtered_wrench,
+        'action.gripper': gripper_width,
+        'phase': 'free',
+        'observation.pose': pose_vector_from_payload(follower_pose),
+        'observation.wrench': raw_wrench,
+        'observation.base_image': {'bytes': None, 'path': None},
+        'observation.wrist_image': {'bytes': None, 'path': None},
         'timestamp': float(timestamp_sec),
         'frame_index': int(frame_index),
         'episode_index': int(episode_index),
+        'task_index': 0,
     }
-
-    leader: Dict[str, Any] = {}
-    if leader_joint_state is not None:
-        leader['q'] = list(leader_joint_state['joint_position'])
-    if leader_pose is not None:
-        leader['ee_pose'] = pose_vector_from_payload(leader_pose)
-    if leader:
-        row['leader'] = leader
 
     return row, images
 
@@ -132,6 +129,7 @@ class RecorderNode(Node):
         self._episode_first_frame_timestamp_ns: Optional[int] = None
         self._episode_start_timestamp_ns: Optional[int] = None
         self._pending_success_annotation: Optional[bool] = None
+        self._wrench_filter = ExponentialMovingAverage(WRENCH_EMA_ALPHA, 6)
 
         self._create_subscriptions()
         self._command_listener = CommandListener(self, self._config.command_topic, self._handle_command)
@@ -204,6 +202,7 @@ class RecorderNode(Node):
             'frequency': int(self._config.sample_rate_hz),
         }
         episode_dir = self._writer.start_episode(metadata)
+        self._wrench_filter.reset()
         self._recording = True
         self._episode_first_frame_timestamp_ns = None
         self._episode_start_timestamp_ns = start_timestamp_ns
@@ -288,6 +287,7 @@ class RecorderNode(Node):
             self._writer.frame_index,
             episode_index,
             self._caches,
+            self._wrench_filter,
         )
         self._writer.write_frame(frame, images)
 

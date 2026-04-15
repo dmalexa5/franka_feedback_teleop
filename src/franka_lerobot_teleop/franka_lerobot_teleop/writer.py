@@ -4,9 +4,37 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional, TextIO
+from typing import Any, Dict, List, Mapping, Optional
+
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from .adapters import ImagePayload
+
+
+DEFAULT_ROW_GROUP_SIZE = 128
+
+
+def recorder_schema() -> pa.Schema:
+    """Return the direct recorder Parquet schema."""
+    image_struct = pa.struct([
+        pa.field('bytes', pa.binary()),
+        pa.field('path', pa.string()),
+    ])
+    return pa.schema([
+        pa.field('action.state', pa.list_(pa.float64())),
+        pa.field('action.wrench', pa.list_(pa.float64())),
+        pa.field('action.gripper', pa.float64()),
+        pa.field('phase', pa.string()),
+        pa.field('observation.pose', pa.list_(pa.float64())),
+        pa.field('observation.wrench', pa.list_(pa.float64())),
+        pa.field('observation.base_image', image_struct),
+        pa.field('observation.wrist_image', image_struct),
+        pa.field('timestamp', pa.float64()),
+        pa.field('frame_index', pa.int64()),
+        pa.field('episode_index', pa.int64()),
+        pa.field('task_index', pa.int64()),
+    ])
 
 
 def _deep_update(target: Dict[str, Any], updates: Mapping[str, Any]) -> None:
@@ -34,21 +62,25 @@ def _json_ready(value: Any) -> Any:
 class EpisodeWriter:
     """Write per-episode metadata, frames, and image assets."""
 
-    def __init__(self, output_dir: Path) -> None:
+    def __init__(self, output_dir: Path, row_group_size: int = DEFAULT_ROW_GROUP_SIZE) -> None:
         self._output_dir = Path(output_dir)
         self._episodes_dir = self._output_dir / 'episodes'
         self._episode_dir: Optional[Path] = None
         self._last_finalized_episode_dir: Optional[Path] = None
-        self._frames_handle: Optional[TextIO] = None
+        self._parquet_writer: Optional[pq.ParquetWriter] = None
+        self._frame_buffer: List[Dict[str, Any]] = []
+        self._row_group_size = int(row_group_size)
         self._frame_index = 0
         self._meta: Dict[str, Any] = {}
         self._episode_id: Optional[int] = None
         self._episode_name: Optional[str] = None
+        if self._row_group_size <= 0:
+            raise ValueError('row_group_size must be positive.')
 
     @property
     def is_active(self) -> bool:
         """Return true when an episode is open for writing."""
-        return self._frames_handle is not None
+        return self._parquet_writer is not None
 
     @property
     def episode_dir(self) -> Optional[Path]:
@@ -77,7 +109,11 @@ class EpisodeWriter:
         self._episode_id = episode_id
         self._episode_name = self._episode_dir.name
         self._write_meta()
-        self._frames_handle = (self._episode_dir / 'frames.jsonl').open('w', encoding='utf-8')
+        self._frame_buffer = []
+        self._parquet_writer = pq.ParquetWriter(
+            str(self._episode_dir / 'frames.parquet'),
+            recorder_schema(),
+        )
         return self._episode_dir
 
     def update_metadata(self, updates: Mapping[str, Any]) -> None:
@@ -92,29 +128,35 @@ class EpisodeWriter:
         frame: Mapping[str, Any],
         images: Mapping[str, Optional[ImagePayload]],
     ) -> None:
-        """Append one JSONL frame and save any matching image assets."""
-        if not self.is_active or self._episode_dir is None or self._frames_handle is None:
+        """Append one Parquet frame and save any matching image assets."""
+        if not self.is_active or self._episode_dir is None:
             raise RuntimeError('Cannot write a frame without an active episode.')
 
-        frame_record = json.loads(json.dumps(_json_ready(dict(frame))))
+        frame_record = _json_ready(dict(frame))
 
-        for camera_name, payload in images.items():
+        for camera_name in ('base', 'wrist'):
+            payload = images.get(camera_name)
             image_path = None
             if payload is not None:
                 image_path = self._write_image(camera_name, payload, self._frame_index)
-            frame_record['observation']['images'][camera_name] = image_path
+            frame_record[f'observation.{camera_name}_image'] = {
+                'bytes': None,
+                'path': image_path,
+            }
 
-        self._frames_handle.write(json.dumps(frame_record, separators=(',', ':')) + '\n')
-        self._frames_handle.flush()
+        self._frame_buffer.append(frame_record)
+        if len(self._frame_buffer) >= self._row_group_size:
+            self._flush_frames()
         self._frame_index += 1
 
     def finalize(self) -> None:
         """Finalize the active episode."""
-        if not self.is_active or self._frames_handle is None:
+        if not self.is_active or self._parquet_writer is None:
             return
+        self._flush_frames()
         self._write_meta()
-        self._frames_handle.close()
-        self._frames_handle = None
+        self._parquet_writer.close()
+        self._parquet_writer = None
         self._last_finalized_episode_dir = self._episode_dir
         self._episode_dir = None
 
@@ -166,3 +208,13 @@ class EpisodeWriter:
             except ValueError:
                 continue
         return highest + 1
+
+    def _flush_frames(self) -> None:
+        """Write the buffered frames as one Parquet row group."""
+        if not self._frame_buffer:
+            return
+        if self._parquet_writer is None:
+            raise RuntimeError('Cannot flush frames without an active Parquet writer.')
+        table = pa.Table.from_pylist(self._frame_buffer, schema=recorder_schema())
+        self._parquet_writer.write_table(table)
+        self._frame_buffer = []
