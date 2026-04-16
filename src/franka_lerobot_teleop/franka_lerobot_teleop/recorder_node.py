@@ -68,7 +68,7 @@ def frame_from_caches(
     caches: Mapping[str, TopicCache],
     wrench_filter: ExponentialMovingAverage,
 ) -> Tuple[Dict[str, Any], Dict[str, Optional[ImagePayload]]]:
-    """Build one recorder frame from the current topic caches."""
+    """Build one recorder frame and image payload set from the current topic caches."""
     follower_joint_state = caches['follower_joint_state'].latest_payload
     follower_pose = caches['follower_pose'].latest_payload
     follower_wrench = caches['follower_wrench'].latest_payload
@@ -90,8 +90,6 @@ def frame_from_caches(
         'phase': 0,
         'observation.pose': pose_vector_from_payload(follower_pose),
         'observation.wrench': raw_wrench,
-        'observation.base_image': {'bytes': None, 'path': None},
-        'observation.wrist_image': {'bytes': None, 'path': None},
         'timestamp': float(timestamp_sec),
         'frame_index': int(frame_index),
         'episode_index': int(episode_index),
@@ -102,7 +100,7 @@ def frame_from_caches(
 
 
 class RecorderNode(Node):
-    """Record Franka teleoperation data into per-episode folders."""
+    """Record Franka teleoperation data into LeRobot-style dataset files."""
 
     def __init__(self) -> None:
         super().__init__('franka_lerobot_recorder')
@@ -201,12 +199,12 @@ class RecorderNode(Node):
             'duration': 0.0,
             'frequency': int(self._config.sample_rate_hz),
         }
-        episode_dir = self._writer.start_episode(metadata)
+        episode_path = self._writer.start_episode(metadata)
         self._wrench_filter.reset()
         self._recording = True
         self._episode_first_frame_timestamp_ns = None
         self._episode_start_timestamp_ns = start_timestamp_ns
-        self.get_logger().info(f'Started recording to {episode_dir}.')
+        self.get_logger().info(f'Started recording to {episode_path}.')
 
     def _stop_recording(self) -> None:
         """Finalize the active episode."""
@@ -230,7 +228,7 @@ class RecorderNode(Node):
                 self.get_logger().info(f'Annotated last episode with success={success}.')
         self._recording = False
         self._episode_start_timestamp_ns = None
-        self.get_logger().info('Stopped recording and finalized the current episode.')
+        self.get_logger().info('Stopped recording and finalized the current dataset episode.')
 
     def _annotate_last_episode(self, success: bool) -> None:
         """Persist the success label for the most recently recorded episode."""

@@ -35,6 +35,16 @@ def optional_bool(value: Any) -> Optional[bool]:
     return _as_bool(value)
 
 
+def optional_positive_int(value: Any) -> Optional[int]:
+    """Parse a launch or parameter integer override where 0 means default."""
+    if value in (None, '', 'auto', 'default'):
+        return None
+    parsed = int(value)
+    if parsed == 0:
+        return None
+    return parsed
+
+
 @dataclass(frozen=True)
 class TopicSpec:
     """Normalized description of one recorder input."""
@@ -112,7 +122,8 @@ def load_recorder_config(
     overrides = dict(overrides or {})
 
     output_dir = Path(overrides.get('output_dir') or raw['output_dir']).expanduser()
-    sample_rate_hz = int(overrides.get('sample_rate_hz') or raw['sample_rate_hz'])
+    sample_rate_override = optional_positive_int(overrides.get('sample_rate_hz'))
+    sample_rate_hz = sample_rate_override or int(raw['sample_rate_hz'])
     if sample_rate_hz <= 0:
         raise ValueError('sample_rate_hz must be > 0.')
 
