@@ -87,7 +87,7 @@ def frame_from_caches(
         'action.state': follower_joint_positions,
         'action.wrench': filtered_wrench,
         'action.gripper': gripper_width,
-        'phase': 'free',
+        'phase': 0,
         'observation.pose': pose_vector_from_payload(follower_pose),
         'observation.wrench': raw_wrench,
         'observation.base_image': {'bytes': None, 'path': None},

@@ -1,4 +1,4 @@
-output_dir: "~/franka_lerobot_data"
+output_dir: "~/franka_contact_data"
 sample_rate_hz: 30
 camera_stale_threshold_sec: 0.5
 command_topic: "/franka_lerobot_teleop/command"

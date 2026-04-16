@@ -6,6 +6,8 @@ This file is an instruction template for agents working in the `franka_lerobot_t
 
 Keep guidance practical, lightweight, and aligned with common ROS 2 development patterns. Prefer decisions that fit the existing workspace, package structure, and tooling unless the user explicitly asks for a different direction.
 
+This is a prototyping repository. Do not prioritize backwards compatibility over the cleanest possible solution.
+
 ## Agent Priorities
 
 Agents should:
@@ -39,7 +41,7 @@ Agents should:
 
 ## Verification And User Next Steps
 
-Agents should not run build tests, launch files, simulations, hardware checks, runtime analysis, or other execution-heavy verification steps.
+Agents should not create tests, run tests, launch files, simulations, hardware checks, runtime analysis, or other execution-heavy verification steps.
 
 Instead, agents should:
 
@@ -52,7 +54,7 @@ Instead, agents should:
 
 Agents should not:
 
-- Attempt to run build tests or runtime analysis.
+- Attempt to create,run, or build tests or runtime analysis.
 - Run launch-based validation, simulation, or hardware-facing checks on the user's behalf.
 - Introduce complex or uncommon solutions when a standard ROS 2 approach is sufficient.
 - Hide important assumptions or proceed past unresolved high-impact ambiguity without surfacing it.

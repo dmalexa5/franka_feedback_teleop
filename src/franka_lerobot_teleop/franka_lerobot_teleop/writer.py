@@ -25,7 +25,7 @@ def recorder_schema() -> pa.Schema:
         pa.field('action.state', pa.list_(pa.float64())),
         pa.field('action.wrench', pa.list_(pa.float64())),
         pa.field('action.gripper', pa.float64()),
-        pa.field('phase', pa.string()),
+        pa.field('phase', pa.int64()),
         pa.field('observation.pose', pa.list_(pa.float64())),
         pa.field('observation.wrench', pa.list_(pa.float64())),
         pa.field('observation.base_image', image_struct),
