@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from franka_lerobot_teleop.filter import ExponentialMovingAverage
-from franka_lerobot_teleop.recorder_node import frame_from_caches
-from franka_lerobot_teleop.topic_cache import TopicCache
+from franka_feedback_teleop.filter import ExponentialMovingAverage
+from franka_feedback_teleop.recorder_node import frame_from_caches
+from franka_feedback_teleop.topic_cache import TopicCache
 
 
 def _cache(key: str, payload: Any) -> TopicCache:

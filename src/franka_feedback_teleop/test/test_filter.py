@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from franka_lerobot_teleop.filter import ExponentialMovingAverage, WRENCH_EMA_ALPHA
+from franka_feedback_teleop.filter import ExponentialMovingAverage, WRENCH_EMA_ALPHA
 
 
 def test_wrench_alpha_constant() -> None:

@@ -1,16 +1,16 @@
-# `franka_lerobot_teleop`
+# `franka_feedback_teleop`
 
-`franka_lerobot_teleop` is a minimal ROS 2 Humble data recorder for leader-follower Franka teleoperation episodes stored directly as per-episode Parquet files.
+`franka_feedback_teleop` is a minimal ROS 2 Humble data recorder for leader-follower Franka teleoperation episodes stored directly as per-episode Parquet files.
 
 ## Architecture
 
 The ROS 2 recorder node caches the latest message for each configured topic and writes one timestep at a fixed 30 Hz directly into the active episode's Parquet file.
 
-The recorder never writes while idle. Recording starts, stops, and post-stop success annotation happen through `/franka_lerobot_teleop/command` with JSON payloads in `std_msgs/String`. Legacy plain-text `start` and `stop` commands are still accepted for compatibility.
+The recorder never writes while idle. Recording starts, stops, and post-stop success annotation happen through `/franka_feedback_teleop/command` with JSON payloads in `std_msgs/String`. Legacy plain-text `start` and `stop` commands are still accepted for compatibility.
 
 ## Configuration
 
-The default configuration lives in [`config/recording.yaml`](/ros2_ws/src/franka_lerobot_teleop/config/recording.yaml). It defines:
+The default configuration lives in [`config/recording.yaml`](/ros2_ws/src/franka_feedback_teleop/config/recording.yaml). It defines:
 
 - output directory
 - sample rate
@@ -33,19 +33,19 @@ Launch arguments override the YAML values for:
 Launch a basic teleop (no recording) setup with:
 
 ```bash
-ros2 launch franka_lerobot_teleop basic_teleop.launch.py
+ros2 launch franka_feedback_teleop basic_teleop.launch.py
 ```
 
 Run the recorder node with:
 
 ```bash
-ros2 launch franka_lerobot_teleop recording_teleop.launch.py
+ros2 launch franka_feedback_teleop recording_teleop.launch.py
 ```
 
 Override defaults when needed:
 
 ```bash
-ros2 launch franka_lerobot_teleop recording_teleop.launch.py \
+ros2 launch franka_feedback_teleop recording_teleop.launch.py \
   output_dir:=/tmp/franka_dataset \
   sample_rate_hz:=30 \
   enable_wrist_camera:=true \
@@ -110,6 +110,6 @@ Image columns store LeRobot-style path cells such as `{"bytes": null, "path": "i
 Recommended checks after changes:
 
 ```bash
-python3 -m pytest src/franka_lerobot_teleop/test
-colcon build --packages-select franka_lerobot_teleop
+python3 -m pytest src/franka_feedback_teleop/test
+colcon build --packages-select franka_feedback_teleop
 ```

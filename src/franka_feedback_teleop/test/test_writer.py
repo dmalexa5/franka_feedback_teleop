@@ -8,8 +8,8 @@ from PIL import Image
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from franka_lerobot_teleop.adapters import ImagePayload
-from franka_lerobot_teleop.writer import EpisodeWriter, recorder_schema
+from franka_feedback_teleop.adapters import ImagePayload
+from franka_feedback_teleop.writer import EpisodeWriter, recorder_schema
 
 
 def _row() -> dict[str, object]:
