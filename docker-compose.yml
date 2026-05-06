@@ -1,12 +1,12 @@
 services:
-  franka_lerobot_teleop:
+  franka_feedback_teleop:
     build:
       context: .
       dockerfile: Dockerfile
       args:
         - USER_UID=${USER_UID}
         - USER_GID=${USER_GID}
-    container_name: franka_lerobot_teleop
+    container_name: franka_feedback_teleop
     network_mode: "host"
     privileged: true
     command: /bin/bash
