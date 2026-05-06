@@ -89,7 +89,7 @@ WORKDIR /ros2_ws
 COPY --chown=$USERNAME:$USERNAME . /ros2_ws
 RUN mkdir -p /ros2_ws/src \
     && sudo chown -R $USERNAME:$USERNAME /ros2_ws \
-    && vcs import src < dependency.repos --recursive --skip-existing \
+    && git submodule update --init --recursive \
     && sudo apt-get update \
     && rosdep update \
     && rosdep install --from-paths src --ignore-src --rosdistro $ROS_DISTRO -y \

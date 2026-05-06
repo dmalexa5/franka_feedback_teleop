@@ -1,0 +1,19 @@
+[submodule "src/franka_description"]
+	path = src/franka_description
+	url = https://github.com/dmalexa5/franka_description.git
+[submodule "src/franka_gripper_teleop"]
+	path = src/franka_gripper_teleop
+	url = https://github.com/dmalexa5/franka_gripper_teleop.git
+[submodule "src/franka_ros2"]
+	path = src/franka_ros2
+	url = https://github.com/dmalexa5/franka_ros2.git
+[submodule "src/franka_ros2_teleop"]
+	path = src/franka_ros2_teleop
+	url = https://github.com/dmalexa5/franka_ros2_teleop.git
+[submodule "src/libfranka"]
+	path = src/libfranka
+	url = https://github.com/frankarobotics/libfranka.git
+	branch = 0.20.4
+[submodule "src/olvx_descriptions_module"]
+	path = src/olvx_descriptions_module
+	url = https://github.com/olive-robotics/olvx_descriptions_module.git
