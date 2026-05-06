@@ -6,7 +6,7 @@
   "service": "franka_feedback_teleop",
   "workspaceFolder": "/ros2_ws",
 
-  "initializeCommand": "serial_gid=\"\"; if [ -e /dev/ttyACM0 ]; then serial_gid=$(stat -c '%g' /dev/ttyACM0); fi; printf 'USER_UID=%s\nUSER_GID=%s\nSERIAL_GID=%s\n' \"$(id -u \"$USER\")\" \"$(id -g \"$USER\")\" \"$serial_gid\" > .env",
+  "initializeCommand": "serial_gid=\"\"; if [ -e /dev/ttyUSB0 ]; then serial_gid=$(stat -c '%g' /dev/ttyUSB0); fi; printf 'USER_UID=%s\nUSER_GID=%s\nSERIAL_GID=%s\n' \"$(id -u \"$USER\")\" \"$(id -g \"$USER\")\" \"$serial_gid\" > .env",
 
   "customizations": {
     "vscode": {

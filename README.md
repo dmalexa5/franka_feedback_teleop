@@ -47,18 +47,34 @@ For serial device access inside the container, see
 From the workspace root:
 
 ```bash
-vcs import src < dependency.repos
+git submodule update --init --recursive
+rosdep update
 rosdep install --from-paths src --ignore-src --rosdistro humble -y
-colcon build --packages-select franka_feedback_teleop
+colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DBUILD_TESTS=OFF
 source install/setup.bash
 ```
 
-## Manual Checks
-
-After changing this package, recommended checks are:
+For the first build, it is recommended to use this build command to prevent out-of-memory issues (particularly on a NUC device):
 
 ```bash
-colcon build --packages-select franka_feedback_teleop
+MAKEFLAGS="-j1 -l1" CMAKE_BUILD_PARALLEL_LEVEL=1 colcon build \
+  --symlink-install \
+  --executor sequential \
+  --parallel-workers 1 \
+  --cmake-args \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_TESTING=OFF \
+    -DBUILD_TESTS=OFF
+```
+
+There will likely be warnings! Don't worry, the packages this project is based on are under rapid development.
+
+## Manual Checks
+
+After changing this package, rebuild with:
+
+```bash
+colcon build --symlink-install --packages-select franka_feedback_teleop
 ros2 launch franka_feedback_teleop basic_teleop.launch.py
 ```
 

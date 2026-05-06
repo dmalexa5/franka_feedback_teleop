@@ -13,7 +13,7 @@ services:
     tty: true
     stdin_open: true
     devices:
-      - /dev/ttyACM0:/dev/ttyACM0
+      - /dev/ttyUSB0:/dev/ttyUSB0
     group_add:
       - "${SERIAL_GID}"
     volumes:
